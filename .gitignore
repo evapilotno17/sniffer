@@ -1,0 +1,13 @@
+__pycache__
+.env
+*vomit*
+*ipynb*
+*prompts*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.idea/
+.vscode/
+.DS_Store
+venv*
