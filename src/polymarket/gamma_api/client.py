@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from polymarket.gamma_api.constants import BASE_URL, Endpoint
 from polymarket.gamma_api.schemas import MarketRequest, EventRequest
-
+from utils.runtime_utils import footprint
 
 trading_keys = {
     # SLUG
@@ -59,7 +59,7 @@ class PolymarketGammaClient:
     """
     Convenience wrapper around Polymarket's Gamma API.
     """
-
+    @footprint()
     def __init__(
         self,
         *,
@@ -107,34 +107,35 @@ class PolymarketGammaClient:
         params = request.model_dump(by_alias=True, exclude_none=True)
         return self._get(f"{BASE_URL}/{Endpoint.EVENTS}", params)
 
-    def get_recent_markets(self, look_back_months: float = 6.0, minimum_volume: float = 100000, minimum_liquidity: float = 1000, limit: int = 500) -> List[Dict[str, Any]]:
+    # later move to nothing_ever_happens
+    @footprint(time_limit_seconds=0.01, memory_limit_mb=10)
+    def get_recent_markets(self, look_back_days: int = 6 * 30, minimum_volume: float = 100000, minimum_liquidity: float = 1000, limit: int = 500, days_to_end: int = None):
         """
-        Fetches a list of markets created in the last look_back_months months.
-        """
-        req = {
+        Fetches a dataframe of markets created in the last look_back_months months.
+        """ 
+        request = {
             'limit': limit,
-            'start_date_min': format_datetime(datetime.now() - timedelta(days=int(look_back_months * 30))),
+            'start_date_min': format_datetime(datetime.now() - timedelta(days=look_back_days)),
             'end_date_min': format_datetime(datetime.now()),
             'volume_num_min': minimum_volume,
             'liquidity_num_min': minimum_liquidity,
             'closed': False
         }
-        res = self.get_markets(MarketRequest(**req))
-        
-        # Parse JSON string fields in each market object
+        if days_to_end is not None:
+            request['end_date_max'] = format_datetime(datetime.now() + timedelta(days=days_to_end))
+        res = self.get_markets(MarketRequest(**request))
+
+        # this is just some cleaning on the data recieved from polymarket
+    
         for market in res:
-            # Fields that contain JSON strings to be parsed
             json_fields = ['outcomes', 'outcomePrices', 'clobTokenIds', 'umaResolutionStatuses']
             for field in json_fields:
                 if field in market and isinstance(market[field], str):
                     try:
                         market[field] = json.loads(market[field])
                     except (json.JSONDecodeError, TypeError):
-                        # Keep original value if parsing fails
                         pass
             
-            # Convert specific fields to appropriate types
-            # Numeric fields (convert to float)
             float_fields = [
                 'liquidity', 'volume', 'volumeNum', 'liquidityNum', 
                 'volume24hr', 'volume1wk', 'volume1mo', 'volume1yr',
@@ -151,7 +152,6 @@ class PolymarketGammaClient:
                     except (ValueError, TypeError):
                         pass
             
-            # Boolean fields
             bool_fields = [
                 'active', 'closed', 'new', 'featured', 'archived', 'restricted',
                 'enableOrderBook', 'hasReviewedDates', 'acceptingOrders', 'negRisk',
@@ -167,7 +167,6 @@ class PolymarketGammaClient:
                     elif market[field].lower() == 'false':
                         market[field] = False
             
-            # Integer fields
             int_fields = ['id', 'commentCount']
             for field in int_fields:
                 if field in market and isinstance(market[field], str):
@@ -176,17 +175,14 @@ class PolymarketGammaClient:
                     except (ValueError, TypeError):
                         pass
             
-            # Convert nested lists of numeric strings to appropriate types
             if 'outcomePrices' in market and isinstance(market['outcomePrices'], list):
                 try:
                     market['outcomePrices'] = [float(price) for price in market['outcomePrices']]
                 except (ValueError, TypeError):
                     pass
             
-            # Process nested objects like events and clobRewards
             if 'events' in market and isinstance(market['events'], list):
                 for event in market['events']:
-                    # Convert numeric fields in events
                     for field in ['liquidity', 'volume', 'openInterest', 'competitive',
                                  'volume24hr', 'volume1wk', 'volume1mo', 'volume1yr']:
                         if field in event and isinstance(event[field], str):
@@ -195,7 +191,6 @@ class PolymarketGammaClient:
                             except (ValueError, TypeError):
                                 pass
                     
-                    # Convert boolean fields in events
                     for field in ['active', 'closed', 'archived', 'new', 'featured', 
                                  'restricted', 'enableOrderBook', 'negRisk', 'cyom',
                                  'showAllOutcomes', 'showMarketImages', 'enableNegRisk',
@@ -209,7 +204,6 @@ class PolymarketGammaClient:
             
             if 'clobRewards' in market and isinstance(market['clobRewards'], list):
                 for reward in market['clobRewards']:
-                    # Convert numeric fields in clobRewards
                     for field in ['rewardsAmount', 'rewardsDailyRate']:
                         if field in reward and isinstance(reward[field], str):
                             try:
@@ -229,7 +223,6 @@ class PolymarketGammaClient:
             df[[k+str(i+1) for i in tdf.columns]] = tdf
         
         return df
-
 
 """
 Below is a concise, field-by-field cheat-sheet for a Polymarket “market” object as returned by the Gamma API, followed by a deeper look at the liquidity numbers.

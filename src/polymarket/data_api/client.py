@@ -14,11 +14,14 @@ from polymarket.data_api.schemas import (
     Trade,
 )
 
+from utils.runtime_utils import footprint
+
 class PolymarketDataClient:
     """
         Convenience wrapper around polymarket's data api
     """
 
+    @footprint()
     def __init__(
         self,
         *,
