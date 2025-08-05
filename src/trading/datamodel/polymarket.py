@@ -12,7 +12,6 @@ class PolymarketPosition(BaseModel):
     slug: str = None
     end_date: str = None
 
-    
 
 class MarketBuy(BaseModel):
     token_id: str
